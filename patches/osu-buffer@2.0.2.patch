@@ -1,0 +1,78 @@
+diff --git a/dist/OsuReader.js b/dist/OsuReader.js
+index 0d2dd16ff09692b96344b910b8121948799d319d..8602f44f7f28d92b127e2948517c6032df5a395e 100644
+--- a/dist/OsuReader.js
++++ b/dist/OsuReader.js
+@@ -2,6 +2,8 @@
+ Object.defineProperty(exports, "__esModule", { value: true });
+ exports.OsuReader = void 0;
+ const BaseBuffer_1 = require("./BaseBuffer");
++const utf8Decoder = new TextDecoder("utf-8");
++const utf8Encoder = new TextEncoder();
+ class OsuReader extends BaseBuffer_1.BaseBuffer {
+     readUint8() {
+         const dataView = new DataView(this._buff);
+@@ -78,10 +80,7 @@ class OsuReader extends BaseBuffer_1.BaseBuffer {
+         }
+         const length = this.read7bitInt();
+         const buffView = new Uint8Array(this._buff, this._position, length);
+-        let value = "";
+-        for (const item of buffView) {
+-            value += String.fromCharCode(item);
+-        }
++        const value = utf8Decoder.decode(buffView);
+         this._position += length;
+         this._length += length;
+         return value;
+@@ -134,11 +133,8 @@ class OsuReader extends BaseBuffer_1.BaseBuffer {
+         return date;
+     }
+     static fromString(value) {
+-        const buff = new ArrayBuffer(value.length);
+-        const buffView = new Uint8Array(buff);
+-        for (let i = 0; i < value.length; i++) {
+-            buffView[i] = value.charCodeAt(i);
+-        }
++        const buffView = utf8Encoder.encode(value);
++        const buff = buffView.buffer.slice(buffView.byteOffset, buffView.byteOffset + buffView.byteLength);
+         return new OsuReader(buff);
+     }
+ }
+diff --git a/src/OsuReader.ts b/src/OsuReader.ts
+index d255870c42b687629f7a74b9a38510d9c961b28c..bf87ea58920a2e92ca839509a89363329954b8e0 100644
+--- a/src/OsuReader.ts
++++ b/src/OsuReader.ts
+@@ -1,5 +1,8 @@
+ import { BaseBuffer } from "./BaseBuffer";
+ 
++const utf8Decoder = new TextDecoder("utf-8");
++const utf8Encoder = new TextEncoder();
++
+ export class OsuReader extends BaseBuffer {
+   public readUint8(): number {
+     const dataView = new DataView(this._buff);
+@@ -85,10 +88,7 @@ export class OsuReader extends BaseBuffer {
+ 
+     const length = this.read7bitInt();
+     const buffView = new Uint8Array(this._buff, this._position, length);
+-    let value = "";
+-    for (const item of buffView) {
+-      value += String.fromCharCode(item);
+-    }
++    const value = utf8Decoder.decode(buffView);
+ 
+     this._position += length;
+     this._length += length;
+@@ -153,11 +153,8 @@ export class OsuReader extends BaseBuffer {
+   }
+ 
+   public static fromString(value: string): OsuReader {
+-    const buff = new ArrayBuffer(value.length);
+-    const buffView = new Uint8Array(buff);
+-    for (let i = 0; i < value.length; i++) {
+-      buffView[i] = value.charCodeAt(i);
+-    }
++    const buffView = utf8Encoder.encode(value);
++    const buff = buffView.buffer.slice(buffView.byteOffset, buffView.byteOffset + buffView.byteLength) as ArrayBuffer;
+     return new OsuReader(buff);
+   }
+ }
