@@ -1,19 +1,57 @@
 /* Reader base from osu-packet! */
 import { OsuReader } from 'osu-buffer';
-import { osuDbStruct, collectionStruct } from './Struct';
+import { osuDbStruct, collectionStruct, scoresStruct } from './Struct';
+
+type LayoutContext = Record<string, any>;
 
 type StructLayout = {
     name: string;
     type: string;
-    uses?: undefined;
-} | {
-    name: string;
-    type: string;
-    uses: string;
+    uses?: string;
+    countFrom?: string;
+    items?: StructLayout[];
+    when?: (context: LayoutContext) => boolean;
 }
 
 export class Reader {
     constructor() {
+    }
+
+    private buildContext(data: any = undefined): LayoutContext {
+        if (!data || typeof data !== 'object' || Array.isArray(data)) {
+            return {};
+        }
+
+        return data;
+    }
+
+    private readStructFields(reader: OsuReader, layout: StructLayout[], inheritedContext: LayoutContext = {}) {
+        const data: Record<string, any> = {};
+
+        for (const item of layout) {
+            const context = {
+                ...inheritedContext,
+                ...data
+            };
+
+            if (item.when && !item.when(context)) {
+                continue;
+            }
+
+            if (item.uses) {
+                const requiredContext = item.uses.split(',').reduce<Record<string, any>>((carry, key) => {
+                    carry[key] = context[key];
+                    return carry;
+                }, {});
+
+                data[item.name] = this.Read(reader, item, requiredContext);
+                continue;
+            }
+
+            data[item.name] = this.Read(reader, item, context);
+        }
+
+        return data;
     }
 
     /**
@@ -25,6 +63,8 @@ export class Reader {
      * @return {Object|Array}
      */
     Read(reader: OsuReader, layout: StructLayout, data: any = undefined) {
+        const context = this.buildContext(data);
+
         switch (layout.type.toLowerCase()) {
             case 'int8':
                 data = reader.readInt8();
@@ -70,6 +110,23 @@ export class Reader {
                 data = [];
                 for (let i = 0; i < len; i++) {
                     data.push(reader.readInt32());
+                }
+                break;
+            }
+            case 'array': {
+                const count = context[layout.countFrom || ''];
+
+                if (typeof count !== 'number') {
+                    throw new Error(`Missing array length for ${layout.name}`);
+                }
+
+                if (!layout.items) {
+                    throw new Error(`Missing array item layout for ${layout.name}`);
+                }
+
+                data = [];
+                for (let i = 0; i < count; i++) {
+                    data.push(this.readStructFields(reader, layout.items, context));
                 }
                 break;
             }
@@ -225,8 +282,12 @@ export class Reader {
 
                     data.push(beatmap);
                 }
+                break;
             }
+            default:
+                throw new Error(`Unknown layout type: ${layout.type}`);
         }
+
         return data;
     }
 
@@ -236,24 +297,12 @@ export class Reader {
      * @param {Array|Object|Null} layout
      * @return {Object|Null}
      */
-    UnmarshalPacket<T>(raw: Buffer, layout: typeof osuDbStruct | typeof collectionStruct): T {
-        const reader = new OsuReader(raw.buffer);
-        const data = {};
-        layout.forEach(item => {
-            if (item.uses) {
-                const needElements = item.uses.split(",")
-                const dater = {}
-                for (let datak of needElements) {
-                    dater[datak] = data[datak]
-                }
-
-                data[item.name] = this.Read(reader, item, item.uses ? dater : {});
-            } else {
-                data[item.name] = this.Read(reader, item);
-            }
-        });
-
-        return data as T;
+    UnmarshalPacket<T>(raw: Buffer, layout: typeof osuDbStruct | typeof collectionStruct | typeof scoresStruct): T {
+        const arrayBuffer = raw.buffer instanceof ArrayBuffer
+            ? raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength)
+            : Uint8Array.from(raw).buffer;
+        const reader = new OsuReader(arrayBuffer);
+        return this.readStructFields(reader, layout as StructLayout[]) as T;
     }
 
 }
